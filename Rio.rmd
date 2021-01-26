@@ -54,11 +54,59 @@ write.csv(olist,'olist.csv')
 head(olist)
 ```
 ```{r}
-load('/home/eyan/Documents/R/kira.RData')
+load('kira.RData')
+```
+```{r}
+olist <- read.csv('Rio/olist.csv')
+```
+```{r}
+length(unique(olist$customer_unique_id))
+```
+```{r}
+#get the numeric columns
+numcol <- Filter(is.numeric,olist)
+for (i in colnames(numcol)) {
+  boxplot(numcol[[i]],main=names(numcol[i]))
+}
+```
+
+UNIVARIATE ANALYSIS
+
+```{r}
+#Getting the general overview of the data
+summary(olist)
+```
+
+
+```{r}
+desc_stats <- data.frame(
+  min = apply(numcol, 2, min),
+  median = apply(numcol, 2, median),
+  mean_df = apply(numcol, 2, mean),
+  SD = apply(numcol, 2, sd),
+  max = apply(numcol, 2, max)
+)
+desc_stats <- round(desc_stats,1)
+head(desc_stats)
+```
+```{r}
+# dim(olist)
+#
+# olist <- subset(olist,price<=5000)
+# olist <- subset(olist,payment_value<=10000)
+# olist <- subset(olist,product_weight_g<=35000)
+#
+# dim(olist)
 ```
 ```{r}
 univar('price',olist)
 ```
 ```{r}
-kls
+univar('order_item_id',olist,'category')
+```
+```{r}
+univar('order_status',olist,'category')
+```
+```{r}
+
 ```
