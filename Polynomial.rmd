@@ -1,0 +1,133 @@
+---
+title: "R Notebook"
+author: eyan
+date: 28/01/2021
+output: html_notebook
+---
+**Start of polynomial**
+```{r}
+x <- olist$order_purchase_timestamp
+year <- as.numeric(format(x, format = "%Y"))
+month <- as.numeric(format(x, format = "%m"))
+day <- as.numeric(format(x, format = "%d"))
+dates <- list('year'=year,'month'=month,'day'=day,'price'=olist$payment_value)
+dates.prices <- as.data.frame(dates)
+head(dates.prices)
+```
+We decided to create models to predict the trend of sales over the years.
+```{r}
+year <- as.numeric(format(x, format = "%Y"))
+month <- as.numeric(format(x, format = "%m"))
+day <- as.numeric(format(x, format = "%d"))
+dates <- list('year'=year,'month'=month,'day'=day,'price'=olist$payment_value)
+dates.prices <- as.data.frame(dates)
+head(dates.prices)
+```
+```{r}
+get_train_validation <- function (dataset){
+  # Geting the row numbers for train sample (80% of the dataset)
+  train <- sample(seq_len(nrow(dataset)), size = ceiling(0.80*nrow(dataset)), replace = FALSE)
+  # training set == part of the dataset in the train sample
+  train_set <- dataset[train,]
+  # Validation set == part of the dataset not in the train sample
+  Validation_set <- dataset[-train,]
+  # fix for R not accepting multiple argument returns
+  sets <- list("Train" = train_set, "Validation" = Validation_set)
+  return (sets)
+}
+POLY <- function (set,what,deg=2){
+  # Geting the train and test sets
+  train.data <- set$Train
+  test.data  <- set$Validation
+  # Build the model
+  if(what=='year'){
+    model <- lm(price ~ poly(year, degree = deg, raw = TRUE), data = train.data)
+
+  }else if(what=='month'){
+    model <- lm(price ~ poly(month, degree = deg, raw = TRUE), data = train.data)
+
+  }else if(what=='day'){
+    model <- lm(price ~ poly(day, degree = deg, raw = TRUE), data = train.data)
+
+  }
+  # Make predictions
+  predictions <- model %>% predict(test.data)
+  #Get the rmse and r2 scores of the model
+  RMSE <- RMSE(predictions, test.data$price)
+  R2 <- R2(predictions, test.data$price)
+  result <- list('model'=model,'rmse'=RMSE,'r2'=R2)
+  return(result)
+}
+predict_ <- function (model,object,lists){
+  #Creating a dataframe from the list provided
+  if(object=='year'){
+    nw <- data.frame('year'=lists)
+  }else
+  if(object=='month'){
+    nw <- data.frame('month'=lists)
+  }else
+  if(object=='day'){
+    nw <- data.frame('day'=lists)
+  }
+  #Predicting the value(s) in the dataframe using the selected model
+  xpr <- suppressWarnings(predict(model,nw,type = 'response'))
+  return (xpr)#Return the prediction
+}
+```
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.prices)
+  res <- suppressWarnings(POLY(sets,'year',deg = i))
+  if (res$rmse < rmse_){
+    best.year_model <- res$model
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for years at',degree_,'degrees'))
+```
+```{r}
+predictions_years <- predict_(best.year_model, 'year', 2016:2024)
+plot(predictions_years)
+```
+The model predicted a rising trend in the prices for the years to come
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.prices)
+  res <- POLY(sets,'month',deg =i)
+  if (res$rmse < rmse_){
+    best.month_model <- res$model
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for months at',degree_,'degrees'))
+```
+```{r}
+predictions_months <- predict_(best.month_model, 'month', 1:12)
+plot(predictions_months)
+```
+The model predicts sales spikes in april and september.
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.prices)
+  res <- POLY(sets,'day',deg =i)
+  if (res$rmse < rmse_){
+    best.day_model <- res$model
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for days at',degree_,'degrees'))
+```
+```{r}
+predictions_days <- predict_(best.day_model, 'day', 1:30)
+plot(predictions_days)
+```
+The model predicts spikes in sales every tenth day and a drop in the sales every day ending in a 5 days
+
+
+**End of polynomial**
