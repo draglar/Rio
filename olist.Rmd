@@ -1,0 +1,663 @@
+---
+title: "Olist"
+author: "Joseph"
+date: "1/27/2021"
+output: html_notebook
+---
+### 1. Data Exploration and joining datasets
+
+#### Import relevant libraries
+```{r}
+# Loading the libraries
+library(data.table)
+library(tidyverse)
+library('caret')
+```
+
+#### Reading the Data
+```{r}
+# Reading the data into R from the csv file
+#
+# customers <- read.csv('olist_customers_dataset.csv')
+# geolocation <- read.csv('olist_geolocation_dataset.csv')
+# order.items <- read.csv('olist_order_items_dataset.csv')
+# order.payments <- read.csv('olist_order_payments_dataset.csv')
+# order.reviews <- read.csv('olist_order_reviews_dataset.csv')
+# orders <- read.csv('olist_orders_dataset.csv')
+# sellers <- read.csv('olist_sellers_dataset.csv')
+# products <- read.csv('olist_products_dataset.csv')
+# product.category <- read.csv('product_category_name_translation.csv')
+```
+#### Changing the name of the product column
+```{r}
+#Changing the name of the product column
+# colnames(product.category)[1] <- "product_category_name"
+# head(product.category)
+```
+
+#### Joining the tables
+```{r}
+# prod <- products %>% inner_join(product.category)
+# olist <-customers %>%
+#         inner_join(orders) %>%
+#         inner_join(order.items) %>%
+#         inner_join(order.payments) %>%
+#         inner_join(order.reviews) %>%
+#         inner_join(sellers) %>%
+#         inner_join(prod) # %>%
+#         # inner_join(geolocation,by=c('customer_city'='geolocation_city'))
+# dim(olist)
+```
+```{r}
+olist <- read.csv('olist.csv')
+head(olist,3)
+```
+we dropped the geol_location dataset because sellers dataset had state and city information too
+
+#### Checking missing values
+```{r}
+#Checking for missing values
+colSums(is.na(olist))
+```
+five columns have 1 missing value each. 
+```{r na}
+olist <- na.omit(olist[,-1])
+```
+We omitted the null values in the dataset
+
+#### Checking for duplicates
+```{r duplicated}
+anyDuplicated(olist)
+```
+There were no duplicates
+
+#### Checking for outliers
+```{r}
+#get the numeric columns
+num.col <- Filter(is.numeric, olist)
+for (i in 1:length(num.col)) {
+  boxplot(num.col[,i], main=names(num.col[i]), type="1")
+  print(i)
+}
+```
+All numeric columns have outliers except customer_zip_code_prefix
+
+### 2. Tidyng the Dataset
+
+#### Renaming misspelled columns
+```{r}
+library(reshape)
+
+olist <- rename(olist, c(product_description_lenght='product_description_length'))
+olist <- rename(olist, c(product_name_lenght='product_name_length'))
+colnames(olist)
+```
+```{r}
+names <- c('order_purchase_timestamp','order_approved_at','order_delivered_carrier_date','order_delivered_customer_date','order_estimated_delivery_date','shipping_limit_date','review_creation_date','review_answer_timestamp')
+for (name in names){
+  olist[[name]] <- as.Date(olist[[name]])
+}
+```
+
+#### Removing missing values
+
+```{r}
+# olist[colnames(na.omit(olist)),]
+colSums(is.na(olist))
+```
+#### Dropping outliers
+```{r}
+#using the subset function
+olist <- subset(olist,price<=5000)
+olist <- subset(olist,payment_value<=10000)
+olist <- subset(olist,product_weight_g<=35000)
+
+num.col <- Filter(is.numeric, olist)
+```
+
+```{r}
+#olist <- separate(olist,order_delivered_customer_date, c("Year", "Month", "Day"))
+
+head(olist, n=3)
+```
+
+### 3. Exploratory Data Analysis
+
+#### Univariate Analysis
+
+```{r}
+library('psych')
+describe(num.col)
+```
+* most of our numerical columns are not symmetrical (normally distributed) since the values of skewness are greater than -1 and +1. though customer_zip_code_prefix and product_name_length are negatively skewed. 
+
+* most of our numerical columns have high kurtosis value; with payment_value being highest at 511 means its very heavy tailed, an indication of high outliers needed to be investigated. Customer_zip_code_prefix has negative value (-0.78), which is an indication of zero outliers needs further investigation. 
+
+* The columns Customer_zip_code_prefix, seller_zip_code_prefix have highest mean due to the variability and uniqueness of zip code values.
+
+* Total transactions in the dataset are 116581
+
+* The columns Customer_zip_code_prefix, seller_zip_code_prefix have highest range due to the variability and uniqueness of zip code values.
+
+* The columns Payment_value have highest kurtosis of 511.07 because of presence of anomaly transaction. 
+
+#### plotting histogram
+
+```{r}
+
+par(mfrow = c(2, 2))
+hist(num.col$price)
+hist(num.col$freight_value)
+hist(num.col$payment_installments) 
+hist(num.col$review_score) 
+hist(num.col$product_weight_g) 
+hist(num.col$product_photos_qty)
+hist(num.col$product_length_cm) 
+hist(num.col$product_height_cm) 
+hist(num.col$product_width_cm)
+```
+* Most of sellers products prices and freight values on Olist are below 1100 units of measure.
+
+* Despite Olist having very flexible payment plans of upto 20 terms, most customers dont take price offers with high number of customers paying upto 10 repayment terms.
+
+* A good number of Olist customers have 5 star rated shop.
+
+* Most of the products in Olist dimensions of 40cm length and 40 cm width. their weight lies between 0 and 10000g.Most Product photos are 1 or 2.
+
+#### Categorical columns
+
+
+```{r}
+cat <- c('payment_type', 'seller_city', 'product_category_name_english', 'seller_state', 'product', 'order_status', 'customer_city', 'customer_state')
+catcols<-as_tibble(cat)
+catcols
+```
+```{r}
+ggplot(olist,aes(payment_type))+ geom_bar(fill='#222222', colour = "#038b8d")
+```
+```{r}
+pd_english <- table(olist$product_category_name_english)
+pd_english <- as.data.frame(head(pd_english,10))
+ggplot(pd_english,aes(x = Var1, y = Freq))+geom_bar(stat = "identity",fill='#222222', colour = "#038b8d")+coord_flip()
+```
+```{r}
+ggplot(olist,aes(customer_state))+ geom_bar(fill='#222222', colour = "#038b8d")+coord_flip()
+```
+```{r}
+ggplot(olist,aes(seller_state))+ geom_bar(fill='#222222', colour = "#038b8d")+coord_flip()
+```
+```{r}
+ggplot(olist,aes(order_status))+ geom_bar(fill='#222222', colour = "#038b8d")
+```
+### Bivariate Analysis
+
+```{r}
+# plot(olist$review_score, olist$price, xlab="review_score", ylab="price")
+```
+review score is not highly affected by the price of the products. high priced tend to have a 5 score rating.
+
+```{r}
+ggplot(olist, aes(x=price, y = review_score )) + geom_point(aes(colour= `order_status`))+
+         labs(title='Olist customer order satisfaction index rate')
+```
+* Most Olist orders are fulfilled and delivered. few orders are not delivered and most customers have 5/4 star rated whether expensive or cheap. 
+
+```{r}
+ggplot(olist, aes(x=price, y = freight_value )) + geom_point(aes(colour= `order_status`))+
+        labs(title='Olist customer order satisfaction index rate')
+```
+* The price of the product highly affects the delivery cost. 
+* There is a positive correlation between price and freight value. 
+
+```{r}
+ggplot(olist, aes(x=product_weight_g,
+                            y = price )) + geom_point(aes(colour= `order_status`))+labs(title='Olist Product weight vs price')
+```
+The price of a product is not dependent on weight.
+
+
+```{r}
+ggplot(olist, aes(x=as.factor(customer_state))) + geom_bar(aes(fill= `order_status`)) +
+        labs(title='Olist Customer revenue by state') + coord_flip()
+```
+* Most of the orders have been delivered to the Sao Paulo (SP), Rio de jeniero (RJ), MINAS GERIAS (MG).These where most of the customers are based but they need to concentrate more on other states with low delivered orders. 
+
+```{r}
+ggplot(olist, aes(x=as.factor(seller_state))) + geom_bar(aes(fill= `order_status`)) +
+        labs(title='Olist sellers state location') + coord_flip()
+```
+* Most of Olist sellers are located in Sao Paulo (SP), Minas Gerias (MG) and Parana (PR).
+
+```{r}
+ggplot(olist, aes(x=as.factor(payment_type))) + geom_bar(aes(fill= `order_status`)) +
+        labs(title='Olist Payment platforms')
+```
+* most commonly used payment channel is credit card followed by boleto, which is one of the most popular online/offline payment methods in Brazil that allows you to pay for Skype Credit and subscriptions.
+
+```{r}
+ggplot(olist, aes(x=as.factor(product_photos_qty))) + geom_bar(aes(fill= `order_status`)) + labs(title='Effects of Products images on consumer behavior')
+```
+* Less the photos more the orders. 
+
+```{r}
+dates <- olist$order_delivered_customer_date
+ggplot(olist, aes(format(dates, format = "%Y"))) + geom_bar(aes(fill= `order_status`)) + labs(title='Olist yearly trends')
+```
+
+* From  2016 the revenues have been growing exponentially annualy.
+
+```{r}
+ggplot(olist, aes(x=as.factor(format(dates, format = "%m")))) +geom_bar(aes(fill= `order_status`))+
+        labs(title='Olist Monthly trend')
+```
+* The highest revenue recorded in the second quarter of the year most of the purchases this due to state and public holidays below;
+
+1. APRIL 20 sao paulo state
+2. BRIDGE  HOLIDAY in Brazil
+3. LABOUR DAY -MAY 1ST-Brazil
+4. JUL 09 SAO PAULO STATE REBELLION DAY-sao paulo
+5. AUG 09-FATHERS DAY- Brazil
+6. SEP 07 -NATIONAL INDEPENDENCE DAY- Brazil
+
+
+```{r}
+ggplot(olist, aes(x=as.factor(format(dates, format = "%d")))) + geom_bar(aes(fill= `order_status`)) + labs(title='Olist Daily trend') + coord_flip()
+```
+
+* Sales are equally distributed within the days of the month. 
+
+```{r}
+#Checking the correlation of variables
+# library('corrplot')
+# library('ggcorrplot')
+get_lower_tri<-function(cor_mat){
+    cor_mat[upper.tri(cor_mat)] <- NA
+    return(cor_mat)
+}
+corr <- round(cor(select_if(num.col, is.numeric)), 2)
+# lower <- get_lower_tri(corr)
+melted <- melt(corr, na.rm = TRUE)
+head(melted)
+
+ggplot(melted, aes(X1, X2))+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_gradient2(low = "#6D9EC1", high = "green", mid = "#E46726")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# ggcorrplot(corr, hc.order = T, ggtheme = ggplot2::theme_gray,
+#    colors = c("#6D9EC1", "green", "#E46726"), lab = T)+
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Multivariate analysis
+
+#### PCA
+
+Drivers of consumer behavior. 
+```{r}
+library('ggbiplot')
+```
+```{r}
+#We had already ran the numericals and dropped redundant columns 
+#we named the numt
+pca <- prcomp(num.col[, 1:16], center = TRUE, scale = TRUE)
+summary(pca)
+
+str(pca)
+```
+
+
+```{r}
+screeplot(pca, type = "l", npcs = 16, main = "Screeplot of the first 16 Principal components")
+abline(h = 0.8, col="red", lty=5)
+```
+```{r}
+cl_list <- factor(olist$order_status)
+ggbiplot(pca, obs.scale = 2, var.scale = 2, groups = cl_list,ellipse = TRUE, circle = TRUE)
+```
+##**Basket analysis**
+
+```{r}
+library('readxl')
+library('lubridate')
+library('arules')
+library('arulesViz')
+```
+```{r}
+#Selecting columns from olist that we need to perform MBA
+olist.trans <- olist[c("product_category_name_english", "order_id","review_score", "customer_city", "order_purchase_timestamp","price","order_status", "payment_type", "customer_unique_id", "customer_id", "product_id")]
+str(olist.trans)
+
+```
+
+```{r}
+#olist.trans % mutate(Description = as.factor(Description))
+library(dplyr)
+
+olist.trans$order_purchase_timestamp <- as.POSIXct(as.character(olist.trans$order_purchase_timestamp), format = "%Y-%m-%d %H:%M:%S")
+
+olist.trans$order_purchase_date <- as.Date(olist.trans$order_purchase_timestamp)
+
+olist.trans$Time <- format(olist.trans$order_purchase_timestamp, "%H:%M:%S")
+
+#olist.trans <- olist.trans[-c(5)]
+str(olist.trans)
+
+```
+Now, to be able to do apply association analysis on our dataset, we need the product IDs. But in our case, the product IDs are *ANONYMIZED*. This is one of the hurdles we had to overcome and find a way around working with our dataset.
+
+What approaches will we use to successfully implement Market Basket Analysis ?
+> We'll create 2 models. One for the product categories and the other for the anonymized product IDs; then draw relevant assumptions from these.
+
+## Creating a model from the encrypted product IDs
+
+```{r}
+olist.trans <- olist.trans[order(olist.trans$order_purchase_date ),]
+
+#ddply(dataframe, variables_to_be_used_to_split_data_frame, function_to_be_applied)
+
+itemList <- ddply(olist.trans,c("order_purchase_date", "customer_id", "product_category_name_english"),
+                       function(df1)paste(df1$product_id,
+                       collapse = ","))
+head(itemList)
+#The R function paste() concatenates vectors to character and separated results using collapse=[any optional character string ]. Here ',' is used
+```
+
+From the item list we group the product ids and the categories with the customer ids and the date that the purchases were made.
+
+However, we only need the product id for analysis hence we'll drop the other columns.
+
+```{r}
+#We only need item transactions, so remove customerID and Date columns.
+
+itemList$customer_id <- NULL
+itemList$order_purchase_date <- NULL
+itemList$product_category_name_english <- NULL
+colnames(itemList) <- c("items")
+head(itemList)
+```
+
+```{r}
+#Write the data frame to a csv file and check whether our transaction format is correct.
+
+write.csv(itemList,"market_basket_transactions.csv", quote = FALSE, row.names = FALSE)
+
+```
+
+Now we have our transaction dataset, and it shows the matrix of items being bought together. Let's load the csv as transactions and see how many transactions we have and what they are.
+
+```{r}
+transactionData <- read.transactions('market_basket_transactions.csv', format = 'basket', sep=',')
+transactionData
+summary(transactionData)
+```
+
+
+```{r}
+# Verifying the object's class
+# ---
+# This should show us transactions as the type of data that we will need
+# ---
+#
+class(transactionData)
+```
+
+We can verify that our class is transactions. We have 97997 transactions (rows) and 32329 items (columns). There are 32329 items; i.e. items are the product descriptions in our original dataset. Transactions here are the collections or subsets of these 97997 items.
+
+The summary gives us some useful information:
+>
+*density* : The percentage of non-empty cells in the sparse matrix. That is the total number of items that are purchased divided by the total number of possible items in that matrix. We can calculate how many items were purchased using density like so: 97997 X 32329 X 3.186186e-05.
+
+Previewing our first 5 transactions
+
+```{r}
+inspect(transactionData[10:15])
+
+```
+The itemFrequencyPlot() allows us to show the absolute or relative values. If absolute it will plot numeric frequencies of each item independently. If relative it will plot how many times these items have appeared as compared to others, as it’s shown in the following plot.
+
+```{r}
+library("RColorBrewer")
+arules::itemFrequencyPlot(transactionData,
+   topN=20,
+   col=brewer.pal(8,'Pastel2'),
+   main='Relative Item Frequency Plot',
+   type="relative",
+   ylab="Item Frequency (Relative)")
+```
+#Create some rules
+>
+1. We use the *Apriori algorithm* in *Arules library* to mine frequent itemsets and association rules. The algorithm employs level-wise search for frequent itemsets.
+2. We pass supp=0.001 and conf=0.8 to return all the rules that have a support of at least 0.1% and confidence of at least 80%.
+3. We sort the rules by decreasing confidence
+
+```{r}
+rules <- apriori(transactionData, parameter = list(supp=0.001, conf=0.8))
+rules.1 <- sort(rules, by='confidence', decreasing = TRUE)
+summary(rules.1)
+```
+
+```{r}
+inspect(rules.1)
+```
+
+Building a apriori model with Min Support as 0.002 and confidence as 0.8
+
+```{r}
+rules <- apriori(transactionData, parameter = list(supp=0.002, conf=0.8))
+rules.2 <- sort(rules, by='confidence', decreasing = TRUE)
+summary(rules.2)
+
+```
+
+Building apriori model with Min Support as 0.002 and confidence as 0.6
+
+```{r}
+rules <- apriori(transactionData, parameter = list(supp=0.004, conf=0.6))
+rules.3 <- sort(rules, by='confidence', decreasing = TRUE)
+summary(rules.3)
+```
+
+
+##Creating a model using product category names
+
+```{r}
+library(plyr)
+
+olist.trans <- olist.trans[order(olist.trans$order_purchase_date ),]
+
+#ddply(dataframe, variables_to_be_used_to_split_data_frame, function_to_be_applied)
+
+itemList2 <- ddply(olist.trans,c("order_purchase_date", "customer_id", "product_id"),
+                       function(df1)paste(df1$product_category_name_english,
+                       collapse = ","))
+head(itemList2)
+#The R function paste() concatenates vectors to character and separated results using collapse=[any optional character string ]. Here ',' is used
+```
+
+```{r}
+#We only need item transactions, so remove customerID and Date columns.
+
+itemList2$customer_id <- NULL
+itemList2$order_purchase_date <- NULL
+itemList2$product_id <- NULL
+colnames(itemList2) <- c("items")
+head(itemList2)
+```
+
+```{r}
+#Write the data frame to a csv file and check whether our transaction format is correct.
+write.csv(itemList2,"market_basket_transactions2.csv", quote = FALSE, row.names = FALSE)
+```
+
+Now we have our transaction dataset, and it shows the matrix of items being bought together. Let's load the csv as transactions and see how many transactions we have and what they are.
+
+```{r}
+transactionData2 <- read.transactions('market_basket_transactions2.csv', format = 'basket', sep=',')
+transactionData2
+summary(transactionData2)
+```
+
+
+```{r}
+rules <- apriori(transactionData2, parameter = list(supp=0.001, conf=0.8))
+rules.1a <- sort(rules, by='confidence', decreasing = TRUE)
+summary(rules.1a)
+```
+
+```{r}
+library("RColorBrewer")
+arules::itemFrequencyPlot(transactionData2,
+   topN=20,
+   col=brewer.pal(8,'Pastel2'),
+   main='Relative Item Frequency Plot',
+   type="relative",
+   ylab="Item Frequency (Relative)")
+
+```
+
+##**Polynomial Regression**
+
+We decided to create models to predict the trend of sales over the years,months and days.
+```{r}
+x <- olist$order_purchase_timestamp
+year <- as.numeric(format(x, format = "%Y"))
+month <- as.numeric(format(x, format = "%m"))
+day <- as.numeric(format(x, format = "%d"))
+dates <- list('year'=year,'month'=month,'day'=day,'revenue'=olist$payment_value)
+dates.and.revenues <- as.data.frame(dates)
+head(dates.and.revenues)
+```
+```{r}
+get_train_validation <- function (dataset){
+  # Geting the row numbers for train sample (80% of the dataset)
+  train <- sample(seq_len(nrow(dataset)), size = ceiling(0.80*nrow(dataset)), replace = FALSE)
+  # training set == part of the dataset in the train sample
+  train_set <- dataset[train,]
+  # Validation set == part of the dataset not in the train sample
+  Validation_set <- dataset[-train,]
+  # fix for R not accepting multiple argument returns
+  sets <- list("Train" = train_set, "Validation" = Validation_set)
+  return (sets)
+}
+POLY <- function (set,what,deg=2){
+  # Geting the train and test sets
+  train.data <- set$Train
+  test.data  <- set$Validation
+  # Build the model
+  if(what=='year'){
+    model <- lm(revenue ~ poly(year, degree = deg, raw = TRUE), data = train.data)
+  }else if(what=='month'){
+    model <- lm(revenue ~ poly(month, degree = deg, raw = TRUE), data = train.data)
+
+  }else if(what=='day'){
+    model <- lm(revenue ~ poly(day, degree = deg, raw = TRUE), data = train.data)
+
+  }
+  # Make predictions
+  predictions <- model %>% predict(test.data)
+  #Get the rmse scores of the model
+  RMSE <- RMSE(predictions, test.data$revenue)
+  result <- list('model'=model,'rmse'=RMSE)
+  return(result)
+}
+predict_ <- function (model,object,lists){
+  #Creating a dataframe from the list provided
+  if(object=='year'){
+    nw <- data.frame('year'=lists)
+  }else
+  if(object=='month'){
+    nw <- data.frame('month'=lists)
+  }else
+  if(object=='day'){
+    nw <- data.frame('day'=lists)
+  }
+  #Predicting the value(s) in the dataframe using the selected model
+  xpr <- suppressWarnings(predict(model,nw,type = 'response'))
+  return (xpr)#Return the prediction
+}
+```
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.and.revenues)
+  res <- suppressWarnings(POLY(sets,'year',deg = i))
+  if (res$rmse < rmse_){
+    best.year_model <- res$model
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for years at',degree_,'degrees'))
+```
+```{r}
+best.year_model <- lm(revenue ~ poly(year, degree = 5, raw = TRUE), data = dates.and.revenues)
+```
+```{r}
+yr <- 2016:2024
+predictions_years <- predict_(best.year_model, 'year', yr)
+plot(predictions_years)
+axis(1,at = 1:9, labels = yr)
+```
+The model predicts a rising trend in the revenue for the years to come.
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.and.revenues)
+  res <- POLY(sets,'month',deg =i)
+  if (res$rmse < rmse_){
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for months at',degree_,'degrees'))
+```
+```{r}
+best.month_model <- lm(revenue ~ poly(month, degree = 7, raw = TRUE), data = dates.and.revenues)
+```
+```{r}
+mnth <- 1:12
+predictions_months <- predict_(best.month_model, 'month', mnth)
+plot(predictions_months)
+axis(1,at= 1:12, labels = mnth)
+```
+The model predicts revenue spikes in april and october.
+These spikes could be attributed to the holiday seasons.
+```{r}
+rmse_ <- 1000
+for (i in 2:10){
+  sets <- get_train_validation(dates.and.revenues)
+  res <- POLY(sets,'day',deg =i)
+  if (res$rmse < rmse_){
+    degree_ <- i
+    rmse_ <- res$rmse
+  }
+}
+print(paste('best degrees for days at',degree_,'degrees'))
+```
+```{r}
+best.day_model <- lm(revenue ~ poly(day, degree = 6, raw = TRUE), data = dates.and.revenues)
+```
+```{r}
+days <- 1:30
+predictions_days <- predict_(best.day_model, 'day', days)
+plot(predictions_days)
+```
+The model predicts spikes in revenue at the beginning and end of months, its also is relatively high in the first 11 days and drops to the least around the 20th day of the month.
+We can assume that most people spend  the most once their income salary has been paid and then the reduction in expenditure towards the middle to end month..
+
+##**Recommendations**
+
+From our analysis we realised that :
+
+1.A very large number of Olist customers and sellers are from Sao Paulo and very low percentage from the other towns .Rio recommended to Olist to Recruit more sellers from other towns in turn this will reduce freight fares and in turn.
+
+2.Most customers seemed to be satisfied with products from Olist site and we would recommend the management should also check the poor reviews because the customer complaints create avenues for more revenue.
+
+3.Olist should take advantage of the holidays and give promos on the promos and also reduce on the delivery time.The holidays include:
+APRIL 20 sao paulo state
+BRIDGE HOLIDAY in Brazil
+LABOUR DAY -MAY 1ST-Brazil
+JUL 09 SÃO PAULO STATE REBELLION DAY-são paulo
+AUG 09-FATHERS DAY- Brazil
+SEP 07 -NATIONAL INDEPENDENCE DAY- Brazil
+
+4.In our market basket analysis we saw than the bed and bath department being the category that and most frequent products being bought together .Console was the poorest in our recommendations we would have advised olist to check products that associate well with console category and advertise with the best category
